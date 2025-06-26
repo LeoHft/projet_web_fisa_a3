@@ -26,7 +26,7 @@ ST=Grand Est
 L=Strasbourg
 O=Breezy Development
 OU=IT Department
-CN=192.168.1.177
+CN=breezy.hofstetterlab.ovh
 
 [v3_req]
 basicConstraints = CA:FALSE
@@ -38,6 +38,8 @@ DNS.1 = localhost
 DNS.2 = www.localhost
 DNS.3 = 127.0.0.1
 DNS.4 = breezy.local
+DNS.5 = breezy.hofstetterlab.ovh
+DNS.6 = www.breezy.hofstetterlab.ovh
 IP.1 = 127.0.0.1
 IP.2 = ::1
 IP.3 = 192.168.1.177

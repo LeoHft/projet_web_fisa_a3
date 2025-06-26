@@ -14,7 +14,10 @@ const knex = Knex(knexConfig[process.env.NODE_ENV || 'development']);
 
 Model.knex(knex);
 const corsOptions = {
-  origin: 'https://192.168.1.177:8443',
+  origin: [
+    'https://192.168.1.177:8443',
+    'https://breezy.hofstetterlab.ovh'
+  ],
   methods: ['GET','POST'],
   credentials: true
 }
