@@ -1,0 +1,10 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/client/node_modules
+/auth-backend/node_modules
+/images-backend/node_modules
+/messages-backend/node_modules
+/posts-backend/node_modules
+/users-backend/node_modules
+

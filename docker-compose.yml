@@ -1,0 +1,563 @@
+services:
+  # ============ CERTIFICATS SSL ============
+  ssl-init:
+    profiles:
+      - dev
+      - production
+    build:
+      context: ./ssl
+      dockerfile: Dockerfile
+    container_name: breezy-ssl-init
+    volumes:
+      - ./ssl:/ssl
+
+
+
+
+
+  # ============ NGINX ============
+  nginx-dev:
+    profiles: 
+      - dev
+    image: nginx:latest
+    container_name: breezy-nginx-dev
+    restart: always
+    ports:
+      - "8088:80" # Redirige vers 8443 (http vers https)
+      - "8443:443"
+    depends_on:
+      ssl-init:
+        condition: service_completed_successfully
+      auth-backend-dev:
+        condition: service_started
+      users-backend-dev:
+        condition: service_started
+      posts-backend-dev:
+        condition: service_started
+      messages-backend-dev:
+        condition: service_started
+      images-backend-dev:
+        condition: service_started
+      app-frontend-dev:
+        condition: service_started
+    volumes:
+      - ./nginx/nginx-dev.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./ssl:/etc/nginx/ssl
+    networks:
+      - breezy-net
+    healthcheck:
+      test: ["CMD", "test", "-f", "/etc/nginx/ssl/certificate.crt", "-a", "-f", "/etc/nginx/ssl/private.key"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx-prod:
+    profiles: 
+      - production
+    image: nginx:latest
+    container_name: breezy-nginx-prod
+    restart: always
+    ports:
+      - "8088:80"
+      - "8443:443"
+    depends_on:
+      ssl-init:
+        condition: service_completed_successfully
+      auth-backend:
+        condition: service_started
+      users-backend:
+        condition: service_started
+      posts-backend:
+        condition: service_started
+      messages-backend:
+        condition: service_started
+      images-backend:
+        condition: service_started
+      app-frontend:
+        condition: service_started
+    volumes:
+      - ./nginx/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro
+      - ./ssl:/etc/nginx/ssl
+      - app_data:/app/dist:ro
+    networks:
+      - breezy-net
+    healthcheck:
+      test: ["CMD", "test", "-f", "/etc/nginx/ssl/certificate.crt", "-a", "-f", "/etc/nginx/ssl/private.key"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+
+
+
+
+
+
+  # ============ DATABASES ============
+  postgres-usersDB:
+    image: postgres
+    container_name: breezy-usersDB
+    shm_size: 128mb
+    ports:
+      - "5433:5432"
+    restart: always
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER:-root}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-secret}'
+      POSTGRES_DB: 'usersDB'
+    volumes:
+      - usersDB_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d usersDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - breezy-net
+
+  postgres-postsDB:
+    image: postgres
+    container_name: breezy-postsDB
+    shm_size: 128mb
+    ports:
+      - "5434:5432"
+    restart: always
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER:-root}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-secret}'
+      POSTGRES_DB: 'postsDB'
+    volumes:
+      - postsDB_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postsDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - breezy-net
+
+
+  postgres-messagesDB:
+    image: postgres
+    container_name: breezy-messagesDB
+    shm_size: 128mb
+    ports:
+      - "5435:5432"
+    restart: always
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER:-root}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:-secret}'
+      POSTGRES_DB: 'messagesDB'
+    volumes:
+      - messagesDB_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d messagesDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - breezy-net
+
+
+  mongo-imagesDB:
+    image: mongo:6.0
+    container_name: breezy-imagesDB
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: '${MONGO_INITDB_ROOT_USERNAME:-admin}'
+      MONGO_INITDB_ROOT_PASSWORD: '${MONGO_INITDB_ROOT_PASSWORD:-password}'
+    volumes:
+      - imagesDB_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 100s
+      timeout: 5s
+      retries: 3
+    networks:
+      - breezy-net
+
+
+
+
+
+
+
+  # ============ ADMINISTRATION ============
+  pgadmin:
+    profiles: 
+      - dev
+    image: dpage/pgadmin4
+    container_name: breezy-pgadmin
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@breezy.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - breezy-net
+
+
+  mongo-express:
+    profiles: 
+      - dev
+    image: mongo-express
+    container_name: breezy-mongo-express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: breezy-imagesDB
+      ME_CONFIG_MONGODB_ADMINUSERNAME: '${MONGO_INITDB_ROOT_USERNAME:-admin}'
+      ME_CONFIG_MONGODB_ADMINPASSWORD: '${MONGO_INITDB_ROOT_PASSWORD:-password}'
+      ME_CONFIG_BASICAUTH_USERNAME: 'admin'
+      ME_CONFIG_BASICAUTH_PASSWORD: 'password'
+    depends_on:
+      - mongo-imagesDB
+    networks:
+      - breezy-net
+
+
+
+
+
+
+
+
+  # ============ BACKEND ============
+  # ============ AUTH BACKEND ============
+  auth-backend-dev:
+    container_name: breezy-auth-backend-dev
+    profiles: 
+      - dev
+    build:
+      context: ./auth-backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: secret
+      DB_HOST: postgres-usersDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'usersDB'
+    volumes:
+      - ./auth-backend:/var/www/auth-backend
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-usersDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  auth-backend:
+    container_name: breezy-auth-backend
+    profiles: 
+      - production
+    build:
+      context: ./auth-backend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: secret
+      DB_HOST: postgres-usersDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'usersDB'
+    volumes:
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-usersDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  # ============ USERS BACKEND ============
+  users-backend-dev:
+    container_name: breezy-users-backend-dev
+    profiles: 
+      - dev
+    build:
+      context: ./users-backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: secret
+      DB_HOST: postgres-usersDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'usersDB'
+    volumes:
+      - ./users-backend:/var/www/users-backend
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-usersDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  users-backend:
+    container_name: breezy-users-backend
+    profiles: 
+      - production
+    build:
+      context: ./users-backend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: secret
+      DB_HOST: postgres-usersDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'usersDB'
+    volumes:
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-usersDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+
+  # ============ POSTS BACKEND ============
+  posts-backend-dev:
+    container_name: breezy-posts-backend-dev
+    profiles: 
+      - dev
+    build:
+      context: ./posts-backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: secret
+      DB_HOST: postgres-postsDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'postsDB'
+    volumes:
+      - ./posts-backend:/var/www/posts-backend
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-postsDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  posts-backend:
+    container_name: breezy-posts-backend
+    profiles: 
+      - production
+    build:
+      context: ./posts-backend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: secret
+      DB_HOST: postgres-postsDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'postsDB'
+    volumes:
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-postsDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  # ============ MESSAGES BACKEND ============
+  messages-backend-dev:
+    container_name: breezy-messages-backend-dev
+    profiles: 
+      - dev
+    build:
+      context: ./messages-backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: secret
+      DB_HOST: postgres-messagesDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'messagesDB'
+    volumes:
+      - ./messages-backend:/var/www/messages-backend
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-messagesDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  messages-backend:
+    container_name: breezy-messages-backend
+    profiles: 
+      - production
+    build:
+      context: ./messages-backend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: secret
+      DB_HOST: postgres-messagesDB
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      DB_NAME: 'messagesDB'
+    volumes:
+      - ./ssl:/var/www/ssl
+    depends_on:
+      postgres-messagesDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+
+  # ============ IMAGES BACKEND ============
+  images-backend-dev:
+    container_name: breezy-images-backend-dev
+    profiles: 
+      - dev
+    build:
+      context: ./images-backend
+      dockerfile: Dockerfile
+      target: development
+      args:
+        NODE_ENV: development
+    environment:
+      NODE_ENV: development
+      JWT_SECRET: secret
+      DB_HOST: mongo-imagesDB
+      DB_PORT: 27017
+      MONGO_HOST: mongo-imagesDB
+      MONGO_PORT: 27017
+      MONGO_DATABASE_NAME: images
+      MONGO_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-password}
+    volumes:
+      - ./images-backend:/var/www/images-backend
+      - ./ssl:/var/www/ssl
+    depends_on:
+      mongo-imagesDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+  images-backend:
+    container_name: breezy-images-backend
+    profiles: 
+      - production
+    build:
+      context: ./images-backend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: secret
+      DB_HOST: mongo-imagesDB
+      DB_PORT: 27017
+      MONGO_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-password}
+    volumes: 
+      - ./ssl:/var/www/ssl
+    depends_on:
+      mongo-imagesDB:
+        condition: service_healthy
+    networks:
+      - breezy-net
+
+
+
+
+
+
+
+
+
+  # ============ FRONTEND ============
+  app-frontend-dev:
+    profiles: 
+      - dev
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      NODE_ENV: development
+      REACT_APP_API_URL: https://192.168.1.177:8443/api
+      # Pour le hot reloading
+      CHOKIDAR_USEPOLLING: "true" 
+      WATCHPACK_POLLING: "true" 
+      WDS_SOCKET_HOST: "0.0.0.0" 
+      WDS_SOCKET_PORT: "8443" 
+      FAST_REFRESH: "true" 
+    volumes:
+      - ./client:/var/www/frontend
+      - /var/www/frontend/node_modules
+    stdin_open: true
+    tty: true
+    networks:
+      - breezy-net
+
+  app-frontend:
+    profiles: 
+      - production
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - app_data:/app/dist
+    networks:
+      - breezy-net
+
+
+volumes:
+  usersDB_data:
+    driver: local
+  postsDB_data:
+    driver: local
+  messagesDB_data:
+    driver: local
+  imagesDB_data:
+    driver: local
+  app_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  breezy-net:
+    name: breezy-net
+    driver: bridge
+
+    
